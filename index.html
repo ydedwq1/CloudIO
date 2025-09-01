@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <title>Memory Lights - 5 Levels Challenge</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            font-family: Arial, sans-serif;
+            background-color: #000;
+            color: #fff;
+            margin: 0;
+            min-height: 100vh;
+            position: relative;
+        }
+
+        #game-container {
+            display: grid;
+            gap: 10px;
+            margin: 20px;
+            padding: 10px;
+            justify-content: center;
+        }
+
+        .light {
+            width: 70px;
+            height: 70px;
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.3s;
+            border: none;
+            opacity: 0.7;
+            box-shadow: 0 0 10px rgba(0,0,0,0.3);
+        }
+
+        .light:hover {
+            opacity: 1;
+            transform: scale(1.05);
+            filter: brightness(1.2);
+            box-shadow: 0 0 20px rgba(255,255,255,0.5);
+        }
+
+        .light:active {
+            transform: scale(0.95) !important;
+        }
+
+        #color-monitor {
+            width: 250px;
+            height: 120px;
+            border-radius: 15px;
+            border: 3px solid #444;
+            margin: 20px;
+            transition: background-color 0.3s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            font-weight: bold;
+        }
+
+        #stats {
+            display: flex;
+            gap: 30px;
+            margin: 15px;
+            font-size: 24px;
+        }
+
+        #record {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 24px;
+            color: #4CAF50;
+            text-shadow: 0 0 5px #4CAF50;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 18px;
+            cursor: pointer;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            transition: all 0.3s;
+            margin: 10px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+            transform: scale(1.05);
+        }
+
+        #start-btn {
+            background-color: #2196F3;
+            margin-top: 30px;
+        }
+
+        #scrimer {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: black;
+            display: none;
+            z-index: 9999;
+        }
+
+        #victory-screen {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.9);
+            padding: 30px 50px;
+            border-radius: 15px;
+            text-align: center;
+            z-index: 10000;
+            display: none;
+        }
+        
+        #download-btn {
+            background-color: #2196F3;
+            margin-top: 20px;
+        }
+        
+        .fade-out {
+            animation: fadeOut 0.3s ease forwards;
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; transform: scale(1); }
+            to { opacity: 0; transform: scale(0); }
+        }
+    </style>
+</head>
+<body>
+    <div id="victory-screen">
+        <h2>Поздравляем! Вы прошли все 5 уровней!</h2>
+        <p>Скачайте ваше видео-поздравление:</p>
+        <a id="download-link" href="congratulations.mp4" download>
+            <button id="download-btn">Скачать видео</button>
+        </a>
+    </div>
+
+    <div id="stats">
+        <div>Уровень: <span id="level">1</span>/5</div>
+        <div>Время: <span id="timer">60</span> сек</div>
+    </div>
+    <div id="record">Рекорд: <span id="best-level">0</span></div>
+    <div id="color-monitor"></div>
+    <div id="game-container"></div>
+    <button id="start-btn">Начать игру</button>
+    <div id="scrimer"></div>
+
+    <script>
+        const MAX_LEVEL = 5;
+        const difficultySettings = {
+            hard: {
+                startButtons: 6,
+                startSpeed: 800,
+                startTime: 60, // Изменили на 60 секунд
+                sequenceGrowth: 1.2,
+                speedDecay: 100
+            }
+        };
+
+        let currentLevel = 1;
+        let currentDifficulty = 'hard';
+        let bestScore = localStorage.getItem('bestScore') || 0;
+        let sequence = [];
+        let playerInput = [];
+        let timeLeft = 60; // Изменили на 60 секунд
+        let timerId = null;
+        let isPlaying = false;
+        let isTimerRunning = false;
+        let colors = [];
+
+        const elements = {
+            gameContainer: document.getElementById('game-container'),
+            timer: document.getElementById('timer'),
+            colorMonitor: document.getElementById('color-monitor'),
+            level: document.getElementById('level'),
+            bestLevel: document.getElementById('best-level'),
+            scrimer: document.getElementById('scrimer'),
+            victoryScreen: document.getElementById('victory-screen'),
+            startBtn: document.getElementById('start-btn')
+        };
+
+        // Инициализация рекорда
+        elements.bestLevel.textContent = bestScore;
+
+        // Обработчик кнопки "Начать игру"
+        elements.startBtn.addEventListener('click', startGame);
+
+        function getLevelSettings(level) {
+            const diff = difficultySettings[currentDifficulty];
+            return {
+                buttons: Math.min(diff.startButtons + Math.floor(level * 0.6), 12),
+                sequenceLength: 3 + Math.floor(level * diff.sequenceGrowth),
+                speed: Math.max(300, diff.startSpeed - (level * diff.speedDecay)),
+                timeBonus: Math.max(3, 15 - Math.floor(level * 0.7))
+            };
+        }
+
+        function generateColors() {
+            const settings = getLevelSettings(currentLevel);
+            colors = [];
+            const usedHues = new Set();
+            
+            while(colors.length < settings.buttons) {
+                const hue = Math.floor(Math.random() * 360);
+                if(!usedHues.has(hue)) {
+                    const saturation = 60 + Math.floor(Math.random() * 30);
+                    const lightness = 40 + Math.floor(Math.random() * 30);
+                    colors.push(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
+                    usedHues.add(hue);
+                }
+            }
+        }
+
+        function initGame() {
+            const settings = getLevelSettings(currentLevel);
+            elements.gameContainer.style.gridTemplateColumns = `repeat(auto-fit, 70px)`;
+            elements.gameContainer.innerHTML = '';
+            
+            colors.forEach((color, i) => {
+                const light = document.createElement('div');
+                light.className = 'light';
+                light.dataset.index = i;
+                light.style.backgroundColor = color;
+                light.dataset.originalColor = color;
+                light.addEventListener('click', handleLightClick);
+                elements.gameContainer.appendChild(light);
+            });
+        }
+
+        function startGame() {
+            if (isPlaying) return;
+            
+            // Скрываем кнопку "Начать игру"
+            elements.startBtn.style.display = 'none';
+            
+            timeLeft = difficultySettings[currentDifficulty].startTime;
+            currentLevel = 1;
+            isPlaying = true;
+            
+            generateColors();
+            elements.level.textContent = currentLevel;
+            updateTimer();
+            initGame();
+            generateNewSequence();
+        }
+
+        function generateNewSequence() {
+            const settings = getLevelSettings(currentLevel);
+            sequence = Array.from({length: settings.sequenceLength}, 
+                () => Math.floor(Math.random() * settings.buttons));
+            showSequence();
+        }
+
+        async function showSequence() {
+            disableClicks();
+            stopTimer();
+            const settings = getLevelSettings(currentLevel);
+            
+            for (const index of sequence) {
+                // Синхронное отображение цвета на мониторе и подсветка лампочки
+                const light = elements.gameContainer.children[index];
+                elements.colorMonitor.style.backgroundColor = light.style.backgroundColor;
+                await activateLight(index);
+                await new Promise(r => setTimeout(r, settings.speed));
+                elements.colorMonitor.style.backgroundColor = '#000';
+                await new Promise(r => setTimeout(r, settings.speed * 0.3));
+            }
+            startTimer();
+            enableClicks();
+        }
+
+        async function activateLight(index, isUserClick = false) {
+            const light = elements.gameContainer.children[index];
+            const originalColor = light.dataset.originalColor;
+            
+            if(isUserClick) {
+                light.style.backgroundColor = originalColor;
+                light.style.opacity = '1';
+                light.style.transform = 'scale(1.1)';
+                await new Promise(r => setTimeout(r, 200));
+                light.style.opacity = '0.7';
+                light.style.transform = 'scale(1)';
+                return;
+            }
+
+            light.style.opacity = '1';
+            light.style.transform = 'scale(1.1)';
+            await new Promise(r => setTimeout(r, 600));
+            light.style.opacity = '0.7';
+            light.style.transform = 'scale(1)';
+        }
+
+        function handleLightClick(e) {
+            if (!isPlaying) return;
+            const index = parseInt(e.target.dataset.index);
+            activateLight(index, true);
+            playerInput.push(index);
+            
+            if(playerInput.length === sequence.length) {
+                checkSequence();
+            }
+        }
+
+        function checkSequence() {
+            const isCorrect = sequence.every((v, i) => v === playerInput[i]);
+            const settings = getLevelSettings(currentLevel);
+            
+            timeLeft += isCorrect ? settings.timeBonus : -Math.floor(settings.buttons * 1.5);
+            timeLeft = Math.max(0, timeLeft);
+            
+            showMessage(isCorrect);
+            updateTimer();
+            
+            if (isCorrect) {
+                if(currentLevel > bestScore) {
+                    bestScore = currentLevel;
+                    localStorage.setItem('bestScore', bestScore);
+                    elements.bestLevel.textContent = bestScore;
+                }
+                
+                // Проверяем, достигнут ли максимальный уровень
+                if(currentLevel >= MAX_LEVEL) {
+                    victory();
+                    return;
+                }
+                
+                currentLevel++;
+                elements.level.textContent = currentLevel;
+                generateColors();
+                initGame();
+                
+                setTimeout(() => {
+                    playerInput = [];
+                    generateNewSequence();
+                }, 1000);
+            } else {
+                setTimeout(() => {
+                    playerInput = [];
+                    showSequence();
+                }, 1000);
+            }
+
+            if (timeLeft <= 0) endGame();
+        }
+
+        function showMessage(isCorrect) {
+            elements.colorMonitor.style.backgroundColor = isCorrect ? '#4CAF50' : '#FF0000';
+            elements.colorMonitor.textContent = isCorrect ? 'ВЕРНО!' : 'ОШИБКА!';
+            setTimeout(() => {
+                elements.colorMonitor.style.backgroundColor = '#000';
+                elements.colorMonitor.textContent = '';
+            }, 800);
+        }
+
+        function updateTimer() {
+            elements.timer.textContent = timeLeft;
+            elements.timer.style.color = timeLeft > 10 ? '#4CAF50' : '#FF0000';
+        }
+
+        function startTimer() {
+            if (!isTimerRunning) {
+                isTimerRunning = true;
+                timerId = setInterval(() => {
+                    timeLeft--;
+                    updateTimer();
+                    if (timeLeft <= 0) endGame();
+                }, 1000);
+            }
+        }
+
+        function stopTimer() {
+            if (isTimerRunning) {
+                isTimerRunning = false;
+                clearInterval(timerId);
+            }
+        }
+
+        function endGame() {
+            isPlaying = false;
+            stopTimer();
+            if (timeLeft <= 0) {
+                showScrimer();
+            }
+            setTimeout(() => {
+                // Показываем кнопку "Начать игру" снова
+                elements.startBtn.style.display = 'block';
+                location.reload();
+            }, 2000);
+        }
+
+        function victory() {
+            isPlaying = false;
+            stopTimer();
+            elements.victoryScreen.style.display = 'block';
+        }
+
+        function showScrimer() {
+            elements.scrimer.style.display = 'block';
+            setTimeout(() => {
+                elements.scrimer.style.display = 'none';
+            }, 2000);
+        }
+
+        function disableClicks() {
+            elements.gameContainer.style.pointerEvents = 'none';
+        }
+
+        function enableClicks() {
+            elements.gameContainer.style.pointerEvents = 'auto';
+        }
+    </script>
+</body>
+</html>
