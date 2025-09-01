@@ -159,21 +159,21 @@
     <script>
         const MAX_LEVEL = 5;
         const difficultySettings = {
-            hard: {
-                startButtons: 6,
-                startSpeed: 800,
-                startTime: 60, // Изменили на 60 секунд
-                sequenceGrowth: 1.2,
-                speedDecay: 100
+            normal: {
+                startButtons: 5,
+                startSpeed: 1000,
+                startTime: 60,
+                sequenceGrowth: 0.8,
+                speedDecay: 80
             }
         };
 
         let currentLevel = 1;
-        let currentDifficulty = 'hard';
+        let currentDifficulty = 'normal'; // Изменили на среднюю сложность
         let bestScore = localStorage.getItem('bestScore') || 0;
         let sequence = [];
         let playerInput = [];
-        let timeLeft = 60; // Изменили на 60 секунд
+        let timeLeft = 60;
         let timerId = null;
         let isPlaying = false;
         let isTimerRunning = false;
